@@ -1,0 +1,142 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [dev, staging, main]
+  pull_request:
+    branches: [staging, main]
+
+jobs:
+  lint-and-type-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+      - name: Install dependencies
+        run: |
+          npm install
+          cd frontend && npm install
+          cd ../backend && npm install
+      - name: Lint and type-check frontend
+        run: |
+          npm run lint
+          npm run type-check
+        working-directory: ./frontend
+      - name: Lint backend
+        run: npm run lint
+        working-directory: ./backend
+
+  build-and-test:
+    needs: lint-and-type-check
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        component: [frontend, backend]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+      - name: Install dependencies
+        run: npm install
+        working-directory: ./${{ matrix.component }}
+      - name: Build
+        run: npm run build
+        working-directory: ./${{ matrix.component }}
+      - name: Run unit tests
+        run: npm run test:unit
+        working-directory: ./${{ matrix.component }}
+
+  build-docker-images:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        component: [frontend, backend]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v0
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          service_account_key: ${{ secrets.GCP_SA_KEY }}
+      - name: Configure Docker for GCP
+        run: gcloud auth configure-docker
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v2
+        with:
+          context: ./${{ matrix.component }}
+          push: true
+          tags: gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ matrix.component }}:${{ github.sha }}
+
+  deploy:
+    needs: build-docker-images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v0
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          service_account_key: ${{ secrets.GCP_SA_KEY }}
+      - name: Configure Docker for GCP
+        run: gcloud auth configure-docker
+      - name: Set up kubectl
+        uses: google-github-actions/get-gke-credentials@v0
+        with:
+          cluster_name: ${{ secrets.GKE_CLUSTER_NAME }}
+          location: ${{ secrets.GKE_CLUSTER_LOCATION }}
+      - name: Install Helm
+        run: |
+          curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
+      - name: Deploy to environment
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/dev" ]]; then
+            echo "Deploying to development environment..."
+            helm upgrade --install frontend ./helm/frontend --set environment=dev --set image.tag=${{ github.sha }}
+            helm upgrade --install backend ./helm/backend --set environment=dev --set image.tag=${{ github.sha }}
+          elif [[ "${{ github.ref }}" == "refs/heads/staging" ]]; then
+            echo "Deploying to staging environment..."
+            helm upgrade --install frontend ./helm/frontend --set environment=staging --set image.tag=${{ github.sha }}
+            helm upgrade --install backend ./helm/backend --set environment=staging --set image.tag=${{ github.sha }}
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "Deploying to production environment..."
+            helm upgrade --install frontend ./helm/frontend --set environment=prod --set image.tag=${{ github.sha }}
+            helm upgrade --install backend ./helm/backend --set environment=prod --set image.tag=${{ github.sha }}
+          fi
+
+  integration-tests:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+      - name: Run integration tests
+        run: npm run test:integration
+
+  e2e-tests:
+    needs: integration-tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+      - name: Run end-to-end tests
+        run: npm run test:e2e
