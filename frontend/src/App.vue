@@ -5,9 +5,11 @@
         <div class="max-w-md mx-auto">
           <div class="divide-y divide-gray-200">
             <div class="py-8 text-base leading-6 space-y-4 text-gray-700 sm:text-lg sm:leading-7">
-              <h1 class="text-2xl font-bold text-gray-900 mb-4">Task Manager Frontend</h1>
+              <h1 class="text-2xl font-bold text-gray-900 mb-4">Frontend for Something</h1>
               <p>Status: Running Successfully! 🚀</p>
               <p class="text-sm text-gray-500">Vue 3 + TypeScript + Tailwind CSS</p>
+              <p class="text-sm text-gray-500">Backend: Pania, Mande, </p>
+              <p class="text-sm text-gray-500">GitHub Actions + Docker + Kubernetes</p>
             </div>
           </div>
         </div>
