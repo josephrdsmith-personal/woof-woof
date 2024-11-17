@@ -1,0 +1,27 @@
+nameOverride: "backend"
+fullnameOverride: "backend"
+
+image:
+  repository: gcr.io/existential-438701/backend
+  tag: dev
+  pullPolicy: Always
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 0
+  maxReplicas: 2  # Reduced for dev environment
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
